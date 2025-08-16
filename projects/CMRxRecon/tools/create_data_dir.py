@@ -65,7 +65,7 @@ SYMLINKS_PATH_STRUCTURE = """
     │   │   │   |   ├── P001_<..>.mat
     │   │   │   └── AccFactor10
     │   │   │   |   ├── P001_<..>.mat
-    │   │   ├── test
+    │   ├── test
     │   │   ├── P001_T1map.mat
     │   │   ├── P001_cine_sax.mat
     │   │   ├── ...
@@ -183,10 +183,12 @@ def main():
     # Create symlinks for validation and testing
     validation_set_path = data_path / "ValidationSet"
     validation_symbolic_path = args.target_path / "MultiCoil" / "validation"
+    validation_acc_symbolic_path = validation_symbolic_path / args.data_type
     validation_full_sample_path = validation_set_path / "FullSample"
 
     test_set_path = data_path / "TestSet"
     test_symbolic_path = args.target_path / "MultiCoil" / "test"
+    test_acc_symbolic_path = test_symbolic_path / args.data_type
     test_full_sample_path = test_set_path / "FullSample"
 
     # Check if the required directories exist
@@ -214,22 +216,24 @@ def main():
 
     for acceleration in ACCELERATIONS:
         validation_acceleration_path = validation_set_path / f"AccFactor{acceleration}"
+        validation_acc_subdir = validation_acc_symbolic_path / f"AccFactor{acceleration}"
         if validation_acceleration_path.exists():
             logger.info(
                 f"Creating symbolic paths for {validation_acceleration_path} "
-                f"at {validation_symbolic_path / f'AccFactor{acceleration}'}..."
+                f"at {validation_acc_subdir}..."
             )
-            create_symlinks(validation_acceleration_path, validation_symbolic_path / f"AccFactor{acceleration}")
+            create_symlinks(validation_acceleration_path, validation_acc_subdir)
         else:
             logger.info(f"Path {validation_acceleration_path} does not exist. Skipping...")
 
         test_acceleration_path = test_set_path / f"AccFactor{acceleration}"
+        test_acc_subdir = test_acc_symbolic_path / f"AccFactor{acceleration}"
         if test_acceleration_path.exists():
             logger.info(
                 f"Creating symbolic paths for {test_acceleration_path} "
-                f"at {test_symbolic_path / f'AccFactor{acceleration}'}..."
+                f"at {test_acc_subdir}..."
             )
-            create_symlinks(test_acceleration_path, test_symbolic_path / f"AccFactor{acceleration}")
+            create_symlinks(test_acceleration_path, test_acc_subdir)
         else:
             logger.info(f"Path {test_acceleration_path} does not exist. Skipping...")
 
