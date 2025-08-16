@@ -72,6 +72,7 @@ __all__ = [
     "build_masking_function",
     "centered_disk_mask",
     "integerize_seed",
+    "CartesianPureEquispacedMaskFunc",
 ]
 
 logger = logging.getLogger(__name__)
@@ -893,6 +894,7 @@ class CartesianEquispacedMaskFunc(EquispacedMaskFunc):
             along the fourth last dimension. Similarly for MaskFuncMode.MULTISLICE, the mask will be created for each
             slice along the fourth last dimension. Default: MaskFuncMode.STATIC.
         """
+        center_fractions = [int(center_fraction) for center_fraction in center_fractions]
         if not all((1 < center_fraction) and isinstance(center_fraction, int) for center_fraction in center_fractions):
             raise ValueError(
                 f"Center fraction values should be integers greater then or equal to 1 corresponding to the number of "
@@ -904,6 +906,69 @@ class CartesianEquispacedMaskFunc(EquispacedMaskFunc):
             uniform_range=uniform_range,
             mode=mode,
         )
+
+
+class CartesianPureEquispacedMaskFunc(CartesianEquispacedMaskFunc):
+    """A subclass of CartesianEquispacedMaskFunc that samples outer regions using nominal acceleration.
+
+    This class generates vertical equispaced line masks with a fully sampled ACS region, but the
+    outer region sampling uses the nominal acceleration directly (e.g., acceleration=4 samples every
+    4th column), without adjusting for the number of ACS lines.
+    """
+
+    def mask_func(
+        self,
+        shape: Union[list[int], tuple[int, ...]],
+        return_acs: bool = False,
+        seed: Optional[Union[int, Iterable[int]]] = None,
+    ) -> torch.Tensor:
+        """Creates a vertical equispaced line mask using nominal acceleration for outer regions.
+
+        Parameters
+        ----------
+        shape : list or tuple of ints
+            The shape of the mask to be created. The shape should have at least 3 dimensions.
+            Samples are drawn along the second last dimension (columns).
+        return_acs : bool
+            Return the autocalibration signal region as a mask.
+        seed : int or iterable of ints or None (optional)
+            Seed for the random number generator. Setting the seed ensures the same mask is generated
+            each time for the same shape. Default: None.
+
+        Returns
+        -------
+        mask : torch.Tensor
+            The sampling mask with shape compatible with input, including a coil axis.
+        """
+        num_cols = shape[-2]  # Phase-encoding dimension
+        num_rows = shape[-3]  # Readout dimension
+        num_slc_or_time = shape[-4] if self.mode in [MaskFuncMode.DYNAMIC, MaskFuncMode.MULTISLICE] else 1
+
+        with temp_seed(self.rng, seed):
+            center_fraction, acceleration = self.choose_acceleration()
+
+            num_low_freqs = int(center_fraction)  # Integer center fractions from parent class
+
+            # Create center (ACS) mask
+            mask = self.center_mask_func(num_cols, num_low_freqs)
+
+            # Repeat mask for DYNAMIC or MULTISLICE modes
+            if self.mode in [MaskFuncMode.DYNAMIC, MaskFuncMode.MULTISLICE]:
+                mask = mask[np.newaxis].repeat(num_slc_or_time, axis=0)
+
+            if return_acs:
+                return self._reshape_and_add_coil_axis(self._broadcast_mask(mask, num_rows), shape)
+
+            # Sample outer regions with nominal acceleration
+            mask = mask.reshape(num_slc_or_time, -1)  # Reshape for frame/slice processing
+            for i in range(num_slc_or_time):
+                offset = 0 # self.rng.randint(0, round(acceleration))
+                accel_samples = np.arange(offset, num_cols - 1, acceleration)
+                accel_samples = np.around(accel_samples).astype(np.uint)
+                mask[i, accel_samples] = True
+
+            # Broadcast and reshape to match input shape with coil axis
+            return self._reshape_and_add_coil_axis(self._broadcast_mask(mask, num_rows), shape)
 
 
 class MagicMaskFunc(CartesianVerticalMaskFunc):
